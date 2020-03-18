@@ -137,3 +137,4 @@ temp/
 *.npy
 *.png
 tempCodeRunnerFile.py
+ijbb_retina_face_detection.csv
