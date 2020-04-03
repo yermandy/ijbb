@@ -5,7 +5,7 @@ import numpy as np
 
 def custom_plot(x, y, x_label, y_label, folder="plots", y_line=None, color="black", file_name="plot"):
     fig, ax = plt.subplots(1, 1)
-    ax.plot(x, y, lw=2, color=color)
+    ax.plot(x, y, lw=2, color=color, tight_layout=True)
     if y_line is not None:
         plt.axvline(x=y_line, color='red')
     plt.xlabel(x_label)
@@ -25,7 +25,7 @@ def plot_one_face_th(one_faces, th, quality_name, best_threshold, i='all'):
     custom_plot(th, one_faces, "Thresholds", "Sets with one face", quality_name, best_threshold, file_name=f'{i}_one_face_thresholds_{quality_name}.png')
 
 def plot_points(points):
-    fig, ax = plt.subplots(1, 1, figsize=(8,5), dpi=100)
+    fig, ax = plt.subplots(1, 1, figsize=(8,5), dpi=100, tight_layout=True)
     for point in points:
         ax.plot(point['x'], point['y'], 'o', lw=2, c=point['c'])
     ax.set_xscale("log")
@@ -37,7 +37,7 @@ def plot_points(points):
     plt.show()
 
 def plot_tar_at_far(curves, errorbar=False, plot_SOTA=False):
-    fig, ax = plt.subplots(1, 1, figsize=(8,5))
+    fig, ax = plt.subplots(1, 1, figsize=(8,5), tight_layout=True)
     for i, roc in enumerate(curves):
         far = roc['far']
         tar = roc['tar_mean']
@@ -62,5 +62,5 @@ def plot_tar_at_far(curves, errorbar=False, plot_SOTA=False):
     ax.grid(True, linestyle='dotted', which="both")
     fig1 = plt.gcf()
     plt.show()
-    fig1.set_size_inches((16, 10))
+    fig1.set_size_inches((12, 7.5))
     fig1.savefig('results/tar@far.png', dpi = 300, bbox_inches='tight')
