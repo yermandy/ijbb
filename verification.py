@@ -15,14 +15,14 @@ class Verification():
         Parameters
         ----------
         template_faces_map : dict
-            Dictionary where for each IJB-A template (key) assigned list of references (value):
+            Dictionary where for each IJB-B template (key) assigned list of references (value):
             faces (features parameter) it consists of.
         pairs_labels : np.array
             Pairs of faces and labels for verification. (N, 3): N – number of pairs to verify
         features : np.array
-            Extracted features. (M, 128): M – number of faces in IJB-A
+            Extracted features. (M, 256): M – number of faces in IJB-B
         quality_scores : np.array, optional
-            Extracted qualities. (M,): M – number of faces in IJB-A
+            Extracted qualities. (M,): M – number of faces in IJB-B
         """
         self.template_faces_map = template_faces_map
         self.pairs = pairs_labels
@@ -32,14 +32,14 @@ class Verification():
         self.thresholds = None
         self.method = method
     
-    def compute_templates(self, method=1):
+    def compute_templates(self, method=1, alpha=0.5):
         method = self.method if self.method is not None else method
         if method == 1:
             return self.compute_templates_1()
         if method == 2:
-            return self.compute_templates_2()
+            return self.compute_templates_2(alpha=alpha)
         if method == 3:
-            return self.compute_templates_3()
+            return self.compute_templates_3(alpha=alpha)
         if method == 4:
             return self.compute_templates_4()
         raise Exception(f"Method {method} is not supported")
@@ -50,14 +50,27 @@ class Verification():
             templates_features[template] = np.average(self.features[faces], axis=0)
         return templates_features
 
-    def compute_templates_2(self):
+    def compute_templates_2(self, alpha=1.0):
+        """
+        Method described in https://arxiv.org/pdf/1804.01159.pdf
+        
+        Parameters
+        ----------
+        alpha : float, optional
+            In the paper, it's a hyperparameter λ, by default 1.0
+        
+        Returns
+        -------
+        dict
+            Dictinary with keys as templates and values are np.array of size 256
+        """
         templates_features = {}
         for template, faces in self.template_faces_map.items():
             qualities = self.quality_scores[faces]
-            # l = np.clip(np.log(qualities / (1 - qualities)) / 2, -5, 5)
-            logit = np.log(qualities / (1 - qualities)) / 2 
-            logit = np.where(logit <= 7, logit, 7)
-            c = np.e ** (logit * 1)
+            logit = np.log((qualities + 1e-8) / ((1 - qualities) + 1e-8)) / 2 
+            sevens = np.repeat(7, len(faces))
+            logit = np.amin([logit, sevens], axis=0)
+            c = np.e ** (logit * alpha)
             c /= c.sum()
             templates_features[template] = np.sum(c * self.features[faces].T, axis=1)
         return templates_features
@@ -84,7 +97,7 @@ class Verification():
         for i in range(0, len(iterable), size):
             yield iterable[i:i + size]
 
-    def find_distances(self, templates_features=None, batch_size=100000):
+    def find_distances(self, templates_features=None, batch_size=50000, th=0.2, beta=1.1):
         """
         Calculate cosine distances between pairs of templates
         
@@ -106,11 +119,20 @@ class Verification():
             t1 = np.empty((len(batch), 256), dtype=np.float32)
             t2 = np.empty((len(batch), 256), dtype=np.float32)
             start = end
+            # attenuate = np.empty((len(batch)), dtype=np.bool)
             for i, pair in enumerate(batch):
                 t1[i] = templates_features[pair[0]]
                 t2[i] = templates_features[pair[1]]
+
+                # lomax1 = np.max(self.quality_scores[pair[0]])
+                # lomax2 = np.max(self.quality_scores[pair[1]])
+
+                # attenuate[i] = lomax1 <= th or lomax2 <= th
+                
             end += len(batch)
             distances[start:end] = 1 - np.einsum("ij,ij->i", t1, t2) / (norm(t1, axis=1) * norm(t2, axis=1) + 1e-12)
+
+            # distances[start:end] = np.where(attenuate, distances[start:end], distances[start:end] / beta)
         return distances
 
     def calculate_tar_at_far(self, distances=None):
@@ -146,7 +168,7 @@ class Verification():
         return tars, fars
 
 
-def calculate_tars(template_faces_map, features, pairs, quality_scores, method):
+def calculate_tars(template_faces_map, features, pairs, quality_scores, method, alpha):
     tars = []
     start = time()
     verify = Verification(
@@ -157,7 +179,7 @@ def calculate_tars(template_faces_map, features, pairs, quality_scores, method):
         method = method
     )
 
-    extracted_features = verify.compute_templates()
+    extracted_features = verify.compute_templates(alpha=alpha)
     distances = verify.find_distances(extracted_features)
     tar, far = verify.calculate_tar_at_far(distances)
 
@@ -171,28 +193,54 @@ if __name__ == "__main__":
 
     template_faces_map = load(open('resources/ijbb_templates_subjects.json', 'r'))
     template_faces_map = {int(k) : v for k, v in template_faces_map.items()}
-    features = np.load("resources/features/new_features_retina_ijbb_0.5.npy")
+    features = np.load("resources/features/features_retina_ijbb_0.5.npy")
     pairs = np.load(f'resources/ijbb_comparisons.npz')['comparisons']
+
+    # pairs = pairs[:500000]
 
     mean_far = np.linspace(1e-5, 1, 10000)
     qualities = qualities 
 
     curves = []
 
+    # for quality in qualities.values():
+    #     if quality['name'] == 'SE-ResNet-50':
+    #         baseline = np.load('results/baseline.npz', allow_pickle=True)['arr_0'].tolist()
+    #         quality['far'] = baseline['far']
+    #         quality['tar_mean'] = baseline['tar_mean']
+    #         quality['tar_std'] = baseline['tar_std']
+    #         curves.append(quality)
+    #         continue
+    
     for quality in qualities.values():
+        # if quality['name'] == 'SE-ResNet-50':
+            # baseline = np.load('results/baseline.npz', allow_pickle=True)['arr_0'].tolist()
+            # quality['far'] = baseline['far']
+            # quality['tar_mean'] = baseline['tar_mean']
+            # quality['tar_std'] = baseline['tar_std']
+            # curves.append(quality)
+            # continue
 
         print(f'\n{quality["name"]}')
 
-        features = np.load(f'resources/{quality["features"]}') if 'features' in quality else features
+        if 'features' in quality:
+            features = np.load(f'resources/{quality["features"]}')
+
         method = quality['method'] if 'method' in quality else None
         quality_scores = np.load(f"resources/{quality['file']}") if 'file' in quality else None
+
+        if (np.where(quality_scores > 1)[0].shape[0] > 0):
+            min_qs = np.min(quality_scores)
+            max_qs = np.max(quality_scores)
+            quality_scores = (quality_scores - min_qs) / (max_qs - min_qs)
         
         tars = calculate_tars(
             template_faces_map = template_faces_map,
             features = features,
             pairs = pairs,
             quality_scores = quality_scores,
-            method = method)
+            method = method,
+            alpha = 1.0)
         mean_tar = np.mean(tars, axis=0, dtype=np.float64)
         std_tar  = np.std(tars, axis=0, dtype=np.float64)
         
