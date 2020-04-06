@@ -32,7 +32,7 @@ class Verification():
         self.thresholds = None
         self.method = method
     
-    def compute_templates(self, method=1, alpha=0.5):
+    def compute_templates(self, method=1, alpha=None):
         method = self.method if self.method is not None else method
         if method == 1:
             return self.compute_templates_1()
@@ -50,7 +50,7 @@ class Verification():
             templates_features[template] = np.average(self.features[faces], axis=0)
         return templates_features
 
-    def compute_templates_2(self, alpha=1.0):
+    def compute_templates_2(self, alpha=None):
         """
         Method described in https://arxiv.org/pdf/1804.01159.pdf
         
@@ -75,7 +75,7 @@ class Verification():
             templates_features[template] = np.sum(c * self.features[faces].T, axis=1)
         return templates_features
 
-    def compute_templates_3(self, alpha=0.5):
+    def compute_templates_3(self, alpha=None):
         templates_features = {}
         for template, faces in self.template_faces_map.items():
             qualities = self.quality_scores[faces]
@@ -187,52 +187,73 @@ def calculate_tars(template_faces_map, features, pairs, quality_scores, method, 
     print(f'dataset was processed in {time() - start:.2f} seconds')
     return tars
 
+def append_calculated(quality, name, curves, ):
+    if quality['name'] == name:
+        npz_dict = np.load('results/alphas.npz', allow_pickle=True)
+        for arr in npz_dict:
+            q = npz_dict[arr].tolist()
+            if q['name'] == name:
+                quality['far'] = q['far']
+                quality['tar_mean'] = q['tar_mean']
+                quality['tar_std'] = q['tar_std']
+                curves.append(quality)
+                return True
+    return False
+    
+
 if __name__ == "__main__":
     ROOT = 'protocol_11'
     template_faces_map = {}
 
-    template_faces_map = load(open('resources/ijbb_templates_subjects.json', 'r'))
+    template_faces_map = load(open('resources/ijbb_cov_templates_subjects.json', 'r'))
+    # template_faces_map = load(open('resources/ijbb_templates_subjects.json', 'r'))
     template_faces_map = {int(k) : v for k, v in template_faces_map.items()}
     features = np.load("resources/features/features_retina_ijbb_0.5.npy")
-    pairs = np.load(f'resources/ijbb_comparisons.npz')['comparisons']
+    pairs = np.load(f'resources/ijbb_covariates.npz')['comparisons']
+    # pairs = np.load(f'resources/ijbb_comparisons.npz')['comparisons']
 
-    # pairs = pairs[:500000]
+    # pairs = pairs[:20000]
 
-    mean_far = np.linspace(1e-5, 1, 10000)
-    qualities = qualities 
+    mean_far = np.linspace(1e-5, 1, 1000000)
+    qualities = cov_nose_mouth
 
     curves = []
-
-    # for quality in qualities.values():
-    #     if quality['name'] == 'SE-ResNet-50':
-    #         baseline = np.load('results/baseline.npz', allow_pickle=True)['arr_0'].tolist()
-    #         quality['far'] = baseline['far']
-    #         quality['tar_mean'] = baseline['tar_mean']
-    #         quality['tar_std'] = baseline['tar_std']
-    #         curves.append(quality)
-    #         continue
     
     for quality in qualities.values():
-        # if quality['name'] == 'SE-ResNet-50':
-            # baseline = np.load('results/baseline.npz', allow_pickle=True)['arr_0'].tolist()
-            # quality['far'] = baseline['far']
-            # quality['tar_mean'] = baseline['tar_mean']
-            # quality['tar_std'] = baseline['tar_std']
-            # curves.append(quality)
-            # continue
+        if append_calculated(quality, 'SE-ResNet-50', curves):
+            continue
 
         print(f'\n{quality["name"]}')
+
+        # region load values from dict
 
         if 'features' in quality:
             features = np.load(f'resources/{quality["features"]}')
 
-        method = quality['method'] if 'method' in quality else None
-        quality_scores = np.load(f"resources/{quality['file']}") if 'file' in quality else None
+        if 'comparisons' in quality:
+            pairs = np.load(f'resources/{quality["comparisons"]}')['comparisons']
 
-        if (np.where(quality_scores > 1)[0].shape[0] > 0):
-            min_qs = np.min(quality_scores)
-            max_qs = np.max(quality_scores)
-            quality_scores = (quality_scores - min_qs) / (max_qs - min_qs)
+        if 'method' in quality:
+            method = quality['method']
+        else:
+            method = None
+
+        if 'file' in quality:
+            quality_scores = np.load(f"resources/{quality['file']}")
+            # Normalize qualities if not in [0, 1] range
+            if len(np.flatnonzero(quality_scores > 1.0)) > 0:
+                min_qs = np.min(quality_scores)
+                max_qs = np.max(quality_scores)
+                quality_scores = (quality_scores - min_qs) / (max_qs - min_qs)
+        else:
+            quality_scores = None
+
+        if 'alpha' in quality:
+            alpha = quality['alpha']
+        else:
+            alpha = None
+
+        # endregion
         
         tars = calculate_tars(
             template_faces_map = template_faces_map,
@@ -240,7 +261,8 @@ if __name__ == "__main__":
             pairs = pairs,
             quality_scores = quality_scores,
             method = method,
-            alpha = 1.0)
+            alpha = alpha)
+
         mean_tar = np.mean(tars, axis=0, dtype=np.float64)
         std_tar  = np.std(tars, axis=0, dtype=np.float64)
         
@@ -254,4 +276,4 @@ if __name__ == "__main__":
 
     np.savez_compressed("results/results.npz", *curves)
 
-    plot_tar_at_far(curves, errorbar=False, plot_SOTA=True)
+    plot_tar_at_far(curves, errorbar=False, plot_SOTA=False)
