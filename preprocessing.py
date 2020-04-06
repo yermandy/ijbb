@@ -19,7 +19,7 @@ def populate_templates(array, templates):
             templates[t].append((f, id))
 
 
-#region ijbb_templates_subjects.json
+# region ijbb_templates_subjects.json
 
 if not isfile("resources/ijbb_templates_subjects.json"):
 
@@ -148,3 +148,20 @@ genuine = comparisons.shape[0] - impostor
 print(f'loaded {impostor} impostor and {genuine} genuine comparisons for 1:1 Covariate Verification')
 
 # endregion
+
+# region ijbb_faces_cov.csv
+
+if not isfile("ijbb_faces_cov.csv"):
+
+    metadata = np.genfromtxt(f"protocol/ijbb_metadata.csv", dtype=np.str, delimiter=',')
+
+    metadata = metadata[:68196, 14:]
+
+    np.savetxt("resources/ijbb_faces_cov.csv", metadata, delimiter=",", fmt="%s")
+
+else:
+
+    metadata = np.genfromtxt(f"resources/ijbb_faces_cov.csv", dtype=np.str, delimiter=',', skip_header=1)
+
+# endregion
+
