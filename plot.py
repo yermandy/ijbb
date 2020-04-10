@@ -31,8 +31,8 @@ def plot_points(points):
     ax.set_xscale("log")
     ax.set_xlim(0.0001, 0.01)
     ax.yaxis.set_major_formatter(PercentFormatter(1))
-    ax.set_xlabel('False Accept Rate')
-    ax.set_ylabel('True Accept Rate')
+    ax.set_xlabel('False Acceptance Rate')
+    ax.set_ylabel('True Acceptance Rate')
     ax.grid(True, linestyle='dotted', which="both")
     plt.show()
 
@@ -53,30 +53,41 @@ def plot_tar_at_far(curves, errorbar=False, plot_SOTA=False):
         tar = [0.762, 0.863, 0.926, 0.963, 0.989, 1]
         ax.plot(far, tar, lw=2, label='SE-GV-4-g1', color='black', alpha=0.95)
     ax.set_xscale("log")
-    ax.set_xlim(1e-5, 1)
+    ax.set_xlim(1e-5, .01)
     ax.set_ylim(top=1)
     # ax.set_ylim(0.65, 1)
     ax.yaxis.set_major_formatter(PercentFormatter(1))
     ax.legend(loc='lower right')
-    ax.set_xlabel('False Accept Rate')
-    ax.set_ylabel('True Accept Rate')
+    ax.set_xlabel('False Acceptance Rate')
+    ax.set_ylabel('True Acceptance Rate')
     ax.grid(True, linestyle='dotted', which="both")
     fig1 = plt.gcf()
     plt.show()
-    ax.set_xlabel('False Accept Rate', fontsize=16)
-    ax.set_ylabel('True Accept Rate', fontsize=16)
+    ax.set_xlabel('False Acceptance Rate', fontsize=16)
+    ax.set_ylabel('True Acceptance Rate', fontsize=16)
     ax.legend(loc='lower right', fontsize=16)
     fig1.set_size_inches((8, 5))
     fig1.savefig('results/tar@far.png', dpi = 300, bbox_inches='tight')
 
 
 if __name__ == "__main__":
-    curves_dict = np.load(f"results/results.npz", allow_pickle=True)
+    curves_dict = np.load(f"results/curves/qualities_pooling.npz", allow_pickle=True)
 
     curves = []
+
+    ''' 
+    # naive qualities
+    curves_dict = dict(curves_dict)
+    curves_dict['arr_3'] = curves_dict.pop('arr_3')
+    curves_dict['arr_1'] = curves_dict.pop('arr_1')
+    curves_dict['arr_2'] = curves_dict.pop('arr_2')
+    curves_dict['arr_0'] = curves_dict.pop('arr_0')
+    '''
 
     for quality in curves_dict:
         quality = curves_dict[quality].tolist()
         curves.append(quality)
+
+    # from results.optimal_alpha.generate_plot import curves
 
     plot_tar_at_far(curves)
