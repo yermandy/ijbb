@@ -52,7 +52,7 @@ if __name__ == "__main__":
     
     metadata = np.genfromtxt(f"resources/ijbb_faces_cov.csv", dtype=np.str, delimiter=',', skip_header=1)
     # quality = np.load('resources/features/norms_retina_ijbb_0.5.npy')
-    quality = np.load('resources/qualities/ijbb_cnn_fq_score_model_31.npy')
+    quality = np.load('resources/qualities/ijbb_cnn_fq_score_model_24.npy')
 
     if len(np.flatnonzero(quality > 1)) > 0:
         min_qs = np.min(quality)
