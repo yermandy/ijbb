@@ -45,6 +45,9 @@ class Verification():
         raise Exception(f"Method {method} is not supported")
 
     def compute_templates_1(self):
+        """
+        Averaging
+        """
         templates_features = {}
         for template, faces in self.template_faces_map.items():
             templates_features[template] = np.average(self.features[faces], axis=0)
@@ -52,6 +55,7 @@ class Verification():
 
     def compute_templates_2(self, alpha=None):
         """
+        Quality Pooling
         Method described in https://arxiv.org/pdf/1804.01159.pdf
         
         Parameters
@@ -86,6 +90,14 @@ class Verification():
         return templates_features
     
     def compute_templates_4(self):
+        """
+        Average Weighting
+        
+        Returns
+        -------
+        dict
+            Dictinary with keys as templates and values are np.array of size 256
+        """ 
         templates_features = {}
         for template, faces in self.template_faces_map.items():
             qualities = self.quality_scores[faces]
@@ -168,62 +180,43 @@ class Verification():
         return tars, fars
 
 
-def calculate_tars(template_faces_map, features, pairs, quality_scores, method, alpha):
-    tars = []
-    start = time()
-    verify = Verification(
-        template_faces_map = template_faces_map,
-        pairs_labels = pairs,
-        features = features,
-        quality_scores = quality_scores,
-        method = method
-    )
-
-    extracted_features = verify.compute_templates(alpha=alpha)
-    distances = verify.find_distances(extracted_features)
-    tar, far = verify.calculate_tar_at_far(distances)
-
-    tars.append(np.interp(mean_far, far, tar))
-    print(f'dataset was processed in {time() - start:.2f} seconds')
-    return tars
-
-def append_calculated(quality, name, curves, ):
+def append_calculated(quality, name, curves, file):
     if quality['name'] == name:
-        npz_dict = np.load('results/alphas.npz', allow_pickle=True)
+        npz_dict = np.load(file, allow_pickle=True)
         for arr in npz_dict:
             q = npz_dict[arr].tolist()
             if q['name'] == name:
                 quality['far'] = q['far']
                 quality['tar_mean'] = q['tar_mean']
                 quality['tar_std'] = q['tar_std']
+                print(f"AUC: {np.trapz(quality['tar_mean'], quality['far']):.5f}")
                 curves.append(quality)
                 return True
     return False
     
 
 if __name__ == "__main__":
-    ROOT = 'protocol_11'
-    template_faces_map = {}
+    template_faces_map = load(open('resources/ijbb_templates_subjects.json', 'r'))
+    pairs = np.load(f'resources/ijbb_comparisons.npz')['comparisons']
 
-    template_faces_map = load(open('resources/ijbb_cov_templates_subjects.json', 'r'))
-    # template_faces_map = load(open('resources/ijbb_templates_subjects.json', 'r'))
+    # template_faces_map = load(open('resources/ijbb_cov_templates_subjects.json', 'r'))
+    # pairs = np.load(f'resources/ijbb_covariates.npz')['comparisons']
+
     template_faces_map = {int(k) : v for k, v in template_faces_map.items()}
-    features = np.load("resources/features/features_retina_ijbb_0.5.npy")
-    pairs = np.load(f'resources/ijbb_covariates.npz')['comparisons']
-    # pairs = np.load(f'resources/ijbb_comparisons.npz')['comparisons']
+    features = np.load("resources/features/features_retina_ijbb_0.5.npy")    
 
     # pairs = pairs[:20000]
 
     mean_far = np.linspace(1e-5, 1, 1000000)
-    qualities = cov_nose_mouth
+    # qualities = cov_size
+    qualities = average_weighting
 
     curves = []
     
     for quality in qualities.values():
-        if append_calculated(quality, 'SE-ResNet-50', curves):
-            continue
-
         print(f'\n{quality["name"]}')
+        # if append_calculated(quality, 'SE-ResNet-50', curves, f'results/results.npz'):
+            # continue
 
         # region load values from dict
 
@@ -253,19 +246,31 @@ if __name__ == "__main__":
         else:
             alpha = None
 
+        if 'color' not in quality:
+            quality['color'] = None
+
         # endregion
-        
-        tars = calculate_tars(
-            template_faces_map = template_faces_map,
-            features = features,
-            pairs = pairs,
-            quality_scores = quality_scores,
-            method = method,
-            alpha = alpha)
+
+        start = time()
+        verify = Verification(
+            template_faces_map=template_faces_map,
+            pairs_labels=pairs,
+            features=features,
+            quality_scores=quality_scores,
+            method=method
+        )
+
+        extracted_features = verify.compute_templates(alpha=alpha)
+        distances = verify.find_distances(extracted_features)
+        tar, far = verify.calculate_tar_at_far(distances)
+
+        tars = [np.interp(mean_far, far, tar)]
+        print(f'dataset was processed in {time() - start:.2f} seconds')
 
         mean_tar = np.mean(tars, axis=0, dtype=np.float64)
         std_tar  = np.std(tars, axis=0, dtype=np.float64)
         
+        print(mean_tar, mean_far)
         print(f'AUC: {np.trapz(mean_tar, mean_far):.5f}')
 
         quality['far']      = mean_far
