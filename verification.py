@@ -32,19 +32,19 @@ class Verification():
         self.thresholds = None
         self.method = method
     
-    def compute_templates(self, method=1, alpha=None):
-        method = self.method if self.method is not None else method
+    def calc_templates(self, method=1, alpha=None):
+        method = method if self.method is None else self.method
         if method == 1:
-            return self.compute_templates_1()
+            return self.calc_templates_avg()
         if method == 2:
-            return self.compute_templates_2(alpha=alpha)
+            return self.calc_templates_quality_pooling(alpha=alpha)
         if method == 3:
-            return self.compute_templates_3(alpha=alpha)
+            return self.calc_templates_3(alpha=alpha)
         if method == 4:
-            return self.compute_templates_4()
+            return self.calc_templates_weighted_avg()
         raise Exception(f"Method {method} is not supported")
 
-    def compute_templates_1(self):
+    def calc_templates_avg(self):
         """
         Averaging
         """
@@ -53,7 +53,7 @@ class Verification():
             templates_features[template] = np.average(self.features[faces], axis=0)
         return templates_features
 
-    def compute_templates_2(self, alpha=None):
+    def calc_templates_quality_pooling(self, alpha=None):
         """
         Quality Pooling
         Method described in https://arxiv.org/pdf/1804.01159.pdf
@@ -79,7 +79,7 @@ class Verification():
             templates_features[template] = np.sum(c * self.features[faces].T, axis=1)
         return templates_features
 
-    def compute_templates_3(self, alpha=None):
+    def calc_templates_3(self, alpha=None):
         templates_features = {}
         for template, faces in self.template_faces_map.items():
             qualities = self.quality_scores[faces]
@@ -89,9 +89,9 @@ class Verification():
             templates_features[template] = np.sum(c * self.features[faces].T, axis=1)
         return templates_features
     
-    def compute_templates_4(self):
+    def calc_templates_weighted_avg(self):
         """
-        Average Weighting
+        Weighted Average
         
         Returns
         -------
@@ -109,7 +109,7 @@ class Verification():
         for i in range(0, len(iterable), size):
             yield iterable[i:i + size]
 
-    def find_distances(self, templates_features=None, batch_size=50000, th=0.2, beta=1.1):
+    def calc_distances(self, templates_features=None, batch_size=50000, th=0.2, beta=1.1):
         """
         Calculate cosine distances between pairs of templates
         
@@ -124,7 +124,7 @@ class Verification():
             N cosine distances between N pairs of templates
         """
         if templates_features is None:
-            templates_features = self.compute_templates()
+            templates_features = self.calc_templates()
         distances = np.empty((self.pairs.shape[0]), dtype=np.float32)
         start, end = 0, 0
         for batch in self.batches(self.pairs, batch_size):
@@ -147,7 +147,7 @@ class Verification():
             # distances[start:end] = np.where(attenuate, distances[start:end], distances[start:end] / beta)
         return distances
 
-    def calculate_tar_at_far(self, distances=None):
+    def calc_roc(self, distances=None):
         """
         Evaluates ROC curve using distances and labels.
 
@@ -161,7 +161,7 @@ class Verification():
             Returns calculated tar and far
         """
         if distances is None :
-            distances = self.find_distances()
+            distances = self.calc_distances()
         if self.thresholds is None:
             min_d = np.min(distances)
             max_d = np.max(distances) + 1e-8
@@ -199,37 +199,28 @@ if __name__ == "__main__":
     template_faces_map = load(open('resources/ijbb_templates_subjects.json', 'r'))
     pairs = np.load(f'resources/ijbb_comparisons.npz')['comparisons']
 
-    # template_faces_map = load(open('resources/ijbb_cov_templates_subjects.json', 'r'))
-    # pairs = np.load(f'resources/ijbb_covariates.npz')['comparisons']
+    covariates = False
 
-    template_faces_map = {int(k) : v for k, v in template_faces_map.items()}
-    features = np.load("resources/features/features_retina_ijbb_0.5.npy")    
+    if covariates:
+        template_faces_map = load(open('resources/ijbb_cov_templates_subjects.json', 'r'))
+        pairs = np.load(f'resources/ijbb_covariates.npz')['comparisons']
+        qualities = new_qualities
+    else:
+        template_faces_map = {int(k) : v for k, v in template_faces_map.items()}
+        features = np.load("resources/features/features_retina_ijbb_0.5.npy")    
+        qualities = cov_size
 
-    # pairs = pairs[:20000]
-
+    # pairs = pairs[:1000000]
     mean_far = np.linspace(1e-5, 1, 1000000)
-    # qualities = cov_size
-    qualities = average_weighting
 
     curves = []
     
     for quality in qualities.values():
         print(f'\n{quality["name"]}')
-        # if append_calculated(quality, 'SE-ResNet-50', curves, f'results/results.npz'):
-            # continue
+        # if append_calculated(quality, 'averaging', curves, f'results/averaging.npz'):
+        #     continue
 
         # region load values from dict
-
-        if 'features' in quality:
-            features = np.load(f'resources/{quality["features"]}')
-
-        if 'comparisons' in quality:
-            pairs = np.load(f'resources/{quality["comparisons"]}')['comparisons']
-
-        if 'method' in quality:
-            method = quality['method']
-        else:
-            method = None
 
         if 'file' in quality:
             quality_scores = np.load(f"resources/{quality['file']}")
@@ -241,13 +232,15 @@ if __name__ == "__main__":
         else:
             quality_scores = None
 
-        if 'alpha' in quality:
-            alpha = quality['alpha']
-        else:
-            alpha = None
+        features = np.load(f'resources/{quality["features"]}') if 'features' in quality else features
 
-        if 'color' not in quality:
-            quality['color'] = None
+        pairs = np.load(f'resources/{quality["comparisons"]}')['comparisons'] if 'comparisons' in quality else pairs
+
+        method = quality['method'] if 'method' in quality else None
+
+        alpha = quality['alpha'] if 'alpha' in quality else None
+
+        quality['color'] = quality['color'] if 'color' in quality else None
 
         # endregion
 
@@ -260,9 +253,9 @@ if __name__ == "__main__":
             method=method
         )
 
-        extracted_features = verify.compute_templates(alpha=alpha)
-        distances = verify.find_distances(extracted_features)
-        tar, far = verify.calculate_tar_at_far(distances)
+        extracted_features = verify.calc_templates(alpha=alpha)
+        distances = verify.calc_distances(extracted_features)
+        tar, far = verify.calc_roc(distances)
 
         tars = [np.interp(mean_far, far, tar)]
         print(f'dataset was processed in {time() - start:.2f} seconds')
@@ -270,7 +263,6 @@ if __name__ == "__main__":
         mean_tar = np.mean(tars, axis=0, dtype=np.float64)
         std_tar  = np.std(tars, axis=0, dtype=np.float64)
         
-        print(mean_tar, mean_far)
         print(f'AUC: {np.trapz(mean_tar, mean_far):.5f}')
 
         quality['far']      = mean_far
