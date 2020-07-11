@@ -1,44 +1,19 @@
 import numpy as np
-from verification import *
+from json import load
+from time import time
+from plot import *
+from config import *
+from aggragation import Aggregation
 
-
-class Identification():
-
+class Identification(Aggregation):
 
     def __init__(self, template_faces_dict, features, quality_scores=None, method=None):
-        self.template_faces_dict = template_faces_dict
-        self.features = features
-        self.quality_scores = quality_scores
-        self.thresholds = None
-        self.method = method
-
-    
-    def calc_templates(self, method=1):
-        method = method if self.method is None else self.method
-        if method == 1:
-            return self.calc_templates_avg()
-        if method == 2:
-            return self.calc_templates_weighting()
-        raise Exception(f"Method {method} is not supported")
-
-
-    def calc_templates_avg(self):
-        templates_features = {}
-        for template, faces in self.template_faces_dict.items():
-            t = np.average(self.features[faces], axis=0)
-            templates_features[template] = t / norm(t)
-        return templates_features
-
-
-    def calc_templates_weighting(self):
-        templates_features = {}
-        for template, faces in self.template_faces_dict.items():
-            qualities = self.quality_scores[faces]
-            qualities /= qualities.sum()
-            t = np.sum(qualities * self.features[faces].T, axis=1)
-            templates_features[template] = t / norm(t)
-        return templates_features
-
+        super().__init__(
+            template_faces_dict,
+            features,
+            quality_scores,
+            method
+        )
 
     def calc_distances(self, templates_features):
         gallery_S1 = np.genfromtxt("protocol/ijbb_1N_gallery_S1.csv", delimiter=",", dtype=np.int, skip_header=1)[:, [0,1]]
@@ -51,7 +26,7 @@ class Identification():
         
         gallery_features = np.empty((len(gallery_templates), 256))
         gallery_identities = np.empty(len(gallery_templates))
-
+        
         for i, (g, g_i) in enumerate(gallery_templates):
             gallery_features[i] = templates_features[g]
             gallery_identities[i] = g_i
@@ -95,7 +70,7 @@ class Identification():
         return np.array(nonmated), np.array(mated)
     
 
-    def calc_det(self, nonmated, mated):
+    def calc_det(self, nonmated, mated, R=30):
 
         ranks = mated[:, 1]
         mated = mated[:, 0]
@@ -115,7 +90,7 @@ class Identification():
         for th in thresholds:
 
             fpir = len(nonmated[nonmated <= th]) 
-            fnir = len(mated[(mated > th) | (ranks > 20)]) 
+            fnir = len(mated[(mated > th) | (ranks > R)]) 
 
             fpirs.append(fpir)
             fnirs.append(fnir)
@@ -171,20 +146,14 @@ class Identification():
 if __name__ == "__main__":
     
     template_faces_dict = load(open('resources/ijbb_templates_subjects.json', 'r'))
-    template_faces_dict = {int(k) : v for k, v in template_faces_dict.items()}
-    features = np.load("resources/features/features_retina_ijbb_0.5.npy")    
+    template_faces_dict = {int(k) : np.array(v) for k, v in template_faces_dict.items()}
+    features = np.load("resources/features/features.npy")    
 
     interp_fpir = np.linspace(1e-4, 1, 100000)
-    qualities = {
-        # 'averaging' : {
-        #     'name': 'averaging', 
-        #     'label': 'averaging',
-        #     'method': 1
-        # },
-       
-    }
+    qualities = new_aggregation
 
     curves = []
+    show_results = True
 
     for quality in qualities.values():
         print(f'\n{quality["name"]}')
@@ -249,6 +218,17 @@ if __name__ == "__main__":
         ## Calculate CMC curve
         cmc = identify.calc_cmc(templates)
         quality['cmc_prob'] = cmc
+
+        if show_results:
+            print('TPIR@FPIR’s of:')
+            fnir_at_frir = [1e-2, 1e-1]
+            for f_at_f in fnir_at_frir:
+                tpir = 1 - interp_fnir[np.searchsorted(interp_fpir, f_at_f)]
+                print(f'\t{f_at_f:.0E}: {tpir:.3f}')
+            
+            print('CMC:')
+            for i in [0, 4, 9]:
+                print(f'\tRank-{i+1}: {cmc[i]:.3f}')
 
         curves.append(quality)
 

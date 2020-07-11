@@ -1,20 +1,19 @@
 import numpy as np
 from json import load
 from time import time
-from scipy.optimize import fminbound
 from plot import *
 from config import *
-from numpy.linalg import norm
+from aggragation import Aggregation
 
-class Verification():
+class Verification(Aggregation):
 
-    def __init__(self, template_faces_map, pairs_labels, features, quality_scores=None, method=None):
+    def __init__(self, template_faces_dict, pairs_labels, features, quality_scores=None, method=None):
         """
         1:1 Verification
         
         Parameters
         ----------
-        template_faces_map : dict
+        template_faces_dict : dict
             Dictionary where for each IJB-B template (key) assigned list of references (value):
             faces (features parameter) it consists of.
         pairs_labels : np.array
@@ -24,86 +23,15 @@ class Verification():
         quality_scores : np.array, optional
             Extracted qualities. (M,): M – number of faces in IJB-B
         """
-        self.template_faces_map = template_faces_map
+        super().__init__(
+            template_faces_dict,
+            features,
+            quality_scores,
+            method
+        )
         self.pairs = pairs_labels
         self.labels = pairs_labels[:, 2]
-        self.features = features
-        self.quality_scores = quality_scores
         self.thresholds = None
-        self.method = method
-    
-    def calc_templates(self, method=1, alpha=None):
-        method = method if self.method is None else self.method
-        if method == 1:
-            return self.calc_templates_avg()
-        if method == 2:
-            return self.calc_templates_quality_pooling(alpha=alpha)
-        if method == 3:
-            return self.calc_templates_3(alpha=alpha)
-        if method == 4:
-            return self.calc_templates_weighted_avg()
-        raise Exception(f"Method {method} is not supported")
-
-    def calc_templates_avg(self):
-        """
-        Averaging
-        """
-        templates_features = {}
-        for template, faces in self.template_faces_map.items():
-            templates_features[template] = np.average(self.features[faces], axis=0)
-        return templates_features
-
-    def calc_templates_quality_pooling(self, alpha=None):
-        """
-        Quality Pooling
-        Method described in https://arxiv.org/pdf/1804.01159.pdf
-        
-        Parameters
-        ----------
-        alpha : float, optional
-            In the paper, it's a hyperparameter λ, by default 1.0
-        
-        Returns
-        -------
-        dict
-            Dictinary with keys as templates and values are np.array of size 256
-        """
-        templates_features = {}
-        for template, faces in self.template_faces_map.items():
-            qualities = self.quality_scores[faces]
-            logit = np.log((qualities + 1e-8) / ((1 - qualities) + 1e-8)) / 2 
-            sevens = np.repeat(7, len(faces))
-            logit = np.amin([logit, sevens], axis=0)
-            c = np.e ** (logit * alpha)
-            c /= c.sum()
-            templates_features[template] = np.sum(c * self.features[faces].T, axis=1)
-        return templates_features
-
-    def calc_templates_3(self, alpha=None):
-        templates_features = {}
-        for template, faces in self.template_faces_map.items():
-            qualities = self.quality_scores[faces]
-            logit = (alpha / qualities) * np.log(qualities / (1 - qualities))
-            c = np.exp(logit)
-            c /= c.sum()
-            templates_features[template] = np.sum(c * self.features[faces].T, axis=1)
-        return templates_features
-    
-    def calc_templates_weighted_avg(self):
-        """
-        Weighted Average
-        
-        Returns
-        -------
-        dict
-            Dictinary with keys as templates and values are np.array of size 256
-        """ 
-        templates_features = {}
-        for template, faces in self.template_faces_map.items():
-            qualities = self.quality_scores[faces]
-            qualities /= qualities.sum()
-            templates_features[template] = np.sum(qualities * self.features[faces].T, axis=1)
-        return templates_features
 
     def batches(self, iterable, size):
         for i in range(0, len(iterable), size):
@@ -111,12 +39,13 @@ class Verification():
 
     def calc_distances(self, templates_features=None, batch_size=50000, th=0.2, beta=1.1):
         """
-        Calculate cosine distances between pairs of templates
+        Calculate cosine distances between pairs of templates.
+        It is assumed that all template descriptors have length 1.
         
         Parameters
         ----------
         templates_features : dict, optional
-            Dictionary where for each template (key) assigned computed feature vector (value)
+            Dictionary where for each template (key) assigned normalized feature vector (value)
         
         Returns
         -------
@@ -142,7 +71,7 @@ class Verification():
                 # attenuate[i] = lomax1 <= th or lomax2 <= th
                 
             end += len(batch)
-            distances[start:end] = 1 - np.einsum("ij,ij->i", t1, t2) / (norm(t1, axis=1) * norm(t2, axis=1) + 1e-12)
+            distances[start:end] = 1 - np.einsum("ij,ij->i", t1, t2)
 
             # distances[start:end] = np.where(attenuate, distances[start:end], distances[start:end] / beta)
         return distances
@@ -196,19 +125,21 @@ def append_calculated(quality, name, curves, file):
     
 
 if __name__ == "__main__":
-    template_faces_map = load(open('resources/ijbb_templates_subjects.json', 'r'))
+    template_faces_dict = load(open('resources/ijbb_templates_subjects.json', 'r'))
     pairs = np.load(f'resources/ijbb_comparisons.npz')['comparisons']
 
     covariates = False
+    show_results = True
 
     if covariates:
-        template_faces_map = load(open('resources/ijbb_cov_templates_subjects.json', 'r'))
+        template_faces_dict = load(open('resources/ijbb_cov_templates_subjects.json', 'r'))
         pairs = np.load(f'resources/ijbb_covariates.npz')['comparisons']
-        qualities = new_qualities
-    else:
-        template_faces_map = {int(k) : v for k, v in template_faces_map.items()}
-        features = np.load("resources/features/features_retina_ijbb_0.5.npy")    
         qualities = cov_size
+    else:
+        template_faces_dict = {int(k) : np.array(v) for k, v in template_faces_dict.items()}
+        features = np.load("resources/features/features.npy")    
+        qualities = new_aggregation
+        
 
     # pairs = pairs[:1000000]
     mean_far = np.linspace(1e-5, 1, 1000000)
@@ -217,8 +148,11 @@ if __name__ == "__main__":
     
     for quality in qualities.values():
         print(f'\n{quality["name"]}')
-        # if append_calculated(quality, 'averaging', curves, f'results/averaging.npz'):
-        #     continue
+        if append_calculated(quality, 'media averaging', curves, f'results/precalculated.npz'):
+            continue
+        if append_calculated(quality, 'CNN-FQ media', curves, f'results/precalculated.npz'):
+            continue
+        
 
         # region load values from dict
 
@@ -246,7 +180,7 @@ if __name__ == "__main__":
 
         start = time()
         verify = Verification(
-            template_faces_map=template_faces_map,
+            template_faces_dict=template_faces_dict,
             pairs_labels=pairs,
             features=features,
             quality_scores=quality_scores,
@@ -269,8 +203,14 @@ if __name__ == "__main__":
         quality['tar_mean'] = mean_tar
         quality['tar_std']  = std_tar
 
+        if show_results:
+            tars_at_fars = [1e-5, 1e-4, 1e-3, 1e-2]
+            for t_at_f in tars_at_fars:
+                tar = mean_tar[np.searchsorted(mean_far, t_at_f)]
+                print(f'{t_at_f:.0E}: {tar:.3f}')
+
         curves.append(quality)
 
     np.savez_compressed("results/results.npz", *curves)
 
-    plot_tar_at_far(curves, errorbar=False, plot_SOTA=False)
+    plot_tar_at_far(curves, errorbar=False, plot_SOTA=True)
