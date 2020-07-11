@@ -162,17 +162,6 @@ if __name__ == "__main__":
 
         # region load values from dict
 
-        if 'features' in quality:
-            features = np.load(f'resources/{quality["features"]}')
-
-        if 'comparisons' in quality:
-            pairs = np.load(f'resources/{quality["comparisons"]}')['comparisons']
-
-        if 'method' in quality:
-            method = quality['method']
-        else:
-            method = None
-
         if 'file' in quality:
             quality_scores = np.load(f"resources/{quality['file']}")
             # Normalize qualities if not in [0, 1] range
@@ -183,13 +172,15 @@ if __name__ == "__main__":
         else:
             quality_scores = None
 
-        if 'alpha' in quality:
-            alpha = quality['alpha']
-        else:
-            alpha = None
+        features = np.load(f'resources/{quality["features"]}') if 'features' in quality else features
 
-        if 'color' not in quality:
-            quality['color'] = None
+        pairs = np.load(f'resources/{quality["comparisons"]}')['comparisons'] if 'comparisons' in quality else pairs
+
+        method = quality['method'] if 'method' in quality else None
+
+        alpha = quality['alpha'] if 'alpha' in quality else None
+
+        quality['color'] = quality['color'] if 'color' in quality else None
 
         # endregion
 
