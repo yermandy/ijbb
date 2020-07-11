@@ -34,11 +34,12 @@ def separate_qualities(cov, labels, quality):
     return qualities
 
 def separate_qualities_cont(cov, labels, quality):
-    not_nan = np.flatnonzero(cov != 'NaN')
+    if cov.dtype != np.int:
+        not_nan = np.flatnonzero(cov != 'NaN')
 
-    quality = quality[not_nan]
-    cov = cov[not_nan].astype(np.float32)
-    cov = np.abs(cov)
+        quality = quality[not_nan]
+        cov = cov[not_nan].astype(np.float32)
+        cov = np.abs(cov)
 
     qualities = []
     for label in labels:
@@ -51,8 +52,9 @@ def separate_qualities_cont(cov, labels, quality):
 if __name__ == "__main__":
     
     metadata = np.genfromtxt(f"resources/ijbb_faces_cov.csv", dtype=np.str, delimiter=',', skip_header=1)
-    # quality = np.load('resources/features/norms_retina_ijbb_0.5.npy')
-    quality = np.load('resources/qualities/ijbb_cnn_fq_score_model_24.npy')
+    coords = np.genfromtxt(f"resources/ijbb_faces.csv", dtype=np.int, delimiter=',')[:, 1:5]
+    quality = np.load('resources/qualities/cnn_fq/qualities_44.npy')
+    # quality = np.load('resources/qualities/ijbb_cnn_fq_score_model_24.npy')
 
     if len(np.flatnonzero(quality > 1)) > 0:
         min_qs = np.min(quality)
@@ -60,7 +62,7 @@ if __name__ == "__main__":
         quality = (quality - min_qs) / (max_qs - min_qs)
 
 
-    '''
+    # '''
     # Forehead
     cov = metadata[:, 2] 
     qualities = separate_qualities(cov, ['1', '0'], quality)
@@ -68,14 +70,14 @@ if __name__ == "__main__":
     # '''
 
     # Nose / mouth 
-    '''
+    # '''
     cov = metadata[:, 1] 
     qualities = separate_qualities(cov, ['1', '0'], quality)
     plot_coviariates(qualities, ['Nose/mouth visible = 1', 'Nose/mouth visible = 0'], 'cov_nose_mouth', show=False)
     # '''
 
     # Facial hair
-    '''
+    # '''
     cov = metadata[:, 3] 
     qualities = separate_qualities(cov, ['0', '1', '2', '3'], quality)
     labels = ['Facial hair = 0', 'Facial hair = 1', 'Facial hair = 2', 'Facial hair = 3']
@@ -83,7 +85,7 @@ if __name__ == "__main__":
     # '''
 
     # Yaw
-    '''
+    # '''
     cov = metadata[:, 8]
     labels = [(0, 15), (15, 30), (30, 45), (45, 90)]
     qualities = separate_qualities_cont(cov, labels, quality)
@@ -92,10 +94,21 @@ if __name__ == "__main__":
     # '''
 
     # Roll
-    '''
+    # '''
     cov = metadata[:, 9]
     labels = [(0, 15), (15, 65)]
     qualities = separate_qualities_cont(cov, labels, quality)
     labels = ['Roll [0°, 15°]', 'Roll [15°, 65°]']
     plot_coviariates(qualities, labels, 'cov_roll', show=False, bins=30)
+    # '''
+
+    # Size
+    # '''
+    x_len = coords[:, 2] - coords[:, 0]
+    y_len = coords[:, 3] - coords[:, 1]
+    sizes = x_len * y_len
+    labels = [(0, 3000), (3000, 6000), (6000, 40000), (40000, max(sizes))]
+    qualities = separate_qualities_cont(sizes, labels, quality)
+    labels = ['<3k px', '3k - 6k px', '6k - 40k px', '>40k px']
+    plot_coviariates(qualities, labels, 'cov_size', show=False, bins=30)
     # '''

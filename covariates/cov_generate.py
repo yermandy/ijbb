@@ -9,6 +9,7 @@ faces = np.genfromtxt(f"resources/ijbb_faces.csv", dtype=np.str, delimiter=',')
 template_faces_map = json.load(open('resources/ijbb_cov_templates_subjects.json', 'r'))
 faces_templates = {v[0] : int(k) for k, v in template_faces_map.items()}
 
+coords = np.genfromtxt(f"resources/ijbb_faces.csv", dtype=np.int, delimiter=',')[:, 1:5]
 
 def create_pairs(from_identities):
     pairs = combinations(from_identities, 2)
@@ -31,7 +32,7 @@ def create_pairs(from_identities):
 
     return np.concatenate((pairs, labels[:, np.newaxis]), axis=1)
 
-def create_pairs_cont(from_identities, cov, val_from, val_to):
+def create_pairs_cont(from_identities, cov, val_from, val_to, difference=True):
     pairs = combinations(from_identities, 2)
     pairs = [*pairs]
     pairs = np.array(pairs)
@@ -39,12 +40,13 @@ def create_pairs_cont(from_identities, cov, val_from, val_to):
     t1_i = pairs[:, 0]
     t2_i = pairs[:, 1]
 
-    diffs = abs(cov[t1_i] - cov[t2_i])
-    diff_mask = np.where((diffs >= val_from) & (diffs < val_to))
+    if difference == True:
+        diffs = abs(cov[t1_i] - cov[t2_i])
+        diff_mask = np.where((diffs >= val_from) & (diffs < val_to))
 
-    t1_i = t1_i[diff_mask]
-    t2_i = t2_i[diff_mask]
-    pairs = pairs[diff_mask]
+        t1_i = t1_i[diff_mask]
+        t2_i = t2_i[diff_mask]
+        pairs = pairs[diff_mask]
 
     identities = faces[:, 6]
 
@@ -75,10 +77,10 @@ def save_pairs(cov_ids, min_len, name):
     cov_pairs = create_pairs(cov_ids)
     np.savez_compressed(f'resources/covariates/{name}.npz', comparisons=cov_pairs)
 
-def save_pairs_cont(cov_ids, cov, val_from, val_to, min_len, name):
+def save_pairs_cont(cov_ids, cov, val_from, val_to, min_len, name, difference=True):
     min_len = len(cov_ids) if min_len > len(cov_ids) else min_len
     cov_ids = np.random.choice(cov_ids, min_len, replace=False)
-    cov_pairs = create_pairs_cont(cov_ids, cov, val_from, val_to)
+    cov_pairs = create_pairs_cont(cov_ids, cov, val_from, val_to, difference=difference)
     np.savez_compressed(f'resources/covariates/{name}.npz', comparisons=cov_pairs)
 
 
@@ -171,4 +173,32 @@ if __name__ == "__main__":
 
     save_pairs_cont(cov_0, cov, 0, 15, min_len, 'cov_roll_0_15')
     save_pairs_cont(cov_1, cov, 15, 65, min_len, 'cov_roll_15_65')
+    # '''
+
+    # Size
+    '''
+    x_len = coords[:, 2] - coords[:, 0]
+    y_len = coords[:, 3] - coords[:, 1]
+    sizes = x_len * y_len
+    labels = [(0, 3000), (3000, 6000), (6000, 40000), (40000, max(sizes))]
+    
+    covs = []
+    for l in labels:
+        with np.errstate(invalid='ignore'):
+            cov_i = np.flatnonzero((sizes >= l[0]) & (sizes < l[1]))
+            covs.append(cov_i)
+
+        # cov_0 = np.flatnonzero((sizes >= 0) & (abs_cov < 15))
+        # cov_1 = np.flatnonzero((abs_cov >= 15) & (abs_cov < 65))
+
+    # min_len = np.min([len(cov_0), len(cov_1)])
+    # print(len(cov_0))
+    # print(len(cov_1))
+    # min_len = 4000
+
+    for i, cov_i in enumerate(covs):
+        print(len(cov_i))
+        save_pairs_cont(cov_i, sizes, labels[i][0], labels[i][1], 5000, f'cov_size_{labels[i][0]}_{labels[i][1]}', difference=False)    
+    # save_pairs_cont(cov_0, cov, 0, 15, min_len, 'cov_roll_0_15')
+    # save_pairs_cont(cov_1, cov, 15, 65, min_len, 'cov_roll_15_65')
     # '''
