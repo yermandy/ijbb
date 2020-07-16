@@ -31,7 +31,6 @@ class Verification(Aggregation):
         )
         self.pairs = pairs_labels
         self.labels = pairs_labels[:, 2]
-        self.thresholds = None
 
     def batches(self, iterable, size):
         for i in range(0, len(iterable), size):
@@ -60,19 +59,17 @@ class Verification(Aggregation):
             t1 = np.empty((len(batch), 256), dtype=np.float32)
             t2 = np.empty((len(batch), 256), dtype=np.float32)
             start = end
+            end += len(batch)
             # attenuate = np.empty((len(batch)), dtype=np.bool)
             for i, pair in enumerate(batch):
                 t1[i] = templates_features[pair[0]]
                 t2[i] = templates_features[pair[1]]
-
                 # lomax1 = np.max(self.quality_scores[pair[0]])
                 # lomax2 = np.max(self.quality_scores[pair[1]])
-
                 # attenuate[i] = lomax1 <= th or lomax2 <= th
-                
-            end += len(batch)
-            distances[start:end] = 1 - np.einsum("ij,ij->i", t1, t2)
 
+            ## find cosine distance, assume template descriptors are normalized
+            distances[start:end] = 1 - np.einsum("ij,ij->i", t1, t2)
             # distances[start:end] = np.where(attenuate, distances[start:end], distances[start:end] / beta)
         return distances
 
@@ -91,15 +88,14 @@ class Verification(Aggregation):
         """
         if distances is None :
             distances = self.calc_distances()
-        if self.thresholds is None:
-            min_d = np.min(distances)
-            max_d = np.max(distances) + 1e-8
-            self.thresholds = np.linspace(min_d, max_d, min(200, len(distances)))
+        min_d = np.min(distances)
+        max_d = np.max(distances) + 1e-8
+        thresholds = np.linspace(min_d, max_d, min(200, len(distances)))
         pos = distances[self.labels == 1]
         neg = distances[self.labels == 0]
         fars = []
         tars = []
-        for th in self.thresholds:
+        for th in thresholds:
             tar = len(pos[pos < th])
             far = len(neg[neg < th])
             tars.append(tar)
@@ -115,18 +111,15 @@ def append_calculated(quality, name, curves, file):
         for arr in npz_dict:
             q = npz_dict[arr].tolist()
             if q['name'] == name:
-                quality['far'] = q['far']
-                quality['tar_mean'] = q['tar_mean']
-                quality['tar_std'] = q['tar_std']
-                print(f"AUC: {np.trapz(quality['tar_mean'], quality['far']):.5f}")
+                quality = q
+                print(f"AUC: {np.trapz(quality['tar'], quality['far']):.5f}")
                 curves.append(quality)
                 return True
     return False
     
 
 if __name__ == "__main__":
-    template_faces_dict = load(open('resources/ijbb_templates_subjects.json', 'r'))
-    pairs = np.load(f'resources/ijbb_comparisons.npz')['comparisons']
+    features = np.load("resources/features/features_retina_ijbb_0.5.npy")    
 
     covariates = False
     show_results = True
@@ -134,24 +127,24 @@ if __name__ == "__main__":
     if covariates:
         template_faces_dict = load(open('resources/ijbb_cov_templates_subjects.json', 'r'))
         pairs = np.load(f'resources/ijbb_covariates.npz')['comparisons']
-        qualities = cov_size
+        qualities = cov_yaw
     else:
-        template_faces_dict = {int(k) : np.array(v) for k, v in template_faces_dict.items()}
-        features = np.load("resources/features/features.npy")    
-        qualities = new_aggregation
+        template_faces_dict = load(open('resources/ijbb_templates_subjects.json', 'r'))
+        pairs = np.load(f'resources/ijbb_comparisons.npz')['comparisons']
+        qualities = one_face
+
+    template_faces_dict = {int(k) : np.array(v) for k, v in template_faces_dict.items()}
         
 
     # pairs = pairs[:1000000]
-    mean_far = np.linspace(1e-5, 1, 1000000)
+    interp_far = np.linspace(1e-5, 1, 1000000)
 
     curves = []
     
     for quality in qualities.values():
         print(f'\n{quality["name"]}')
-        if append_calculated(quality, 'media averaging', curves, f'results/precalculated.npz'):
-            continue
-        if append_calculated(quality, 'CNN-FQ media', curves, f'results/precalculated.npz'):
-            continue
+        # if append_calculated(quality, 'L2_norm', curves, f'results/verification_results.npz'):
+        #     continue
         
 
         # region load values from dict
@@ -191,26 +184,21 @@ if __name__ == "__main__":
         distances = verify.calc_distances(extracted_features)
         tar, far = verify.calc_roc(distances)
 
-        tars = [np.interp(mean_far, far, tar)]
+        interp_tar = np.interp(interp_far, far, tar)
         print(f'dataset was processed in {time() - start:.2f} seconds')
+        print(f'AUC: {np.trapz(interp_tar, interp_far):.5f}')
 
-        mean_tar = np.mean(tars, axis=0, dtype=np.float64)
-        std_tar  = np.std(tars, axis=0, dtype=np.float64)
-        
-        print(f'AUC: {np.trapz(mean_tar, mean_far):.5f}')
-
-        quality['far']      = mean_far
-        quality['tar_mean'] = mean_tar
-        quality['tar_std']  = std_tar
+        quality['far'] = interp_far
+        quality['tar'] = interp_tar
 
         if show_results:
             tars_at_fars = [1e-5, 1e-4, 1e-3, 1e-2]
             for t_at_f in tars_at_fars:
-                tar = mean_tar[np.searchsorted(mean_far, t_at_f)]
+                tar = interp_tar[np.searchsorted(interp_far, t_at_f)]
                 print(f'{t_at_f:.0E}: {tar:.3f}')
 
         curves.append(quality)
 
-    np.savez_compressed("results/results.npz", *curves)
+    np.savez_compressed("results/verification_results.npz", *curves)
 
-    plot_tar_at_far(curves, errorbar=False, plot_SOTA=True)
+    plot_roc(curves, plot_SOTA=False)

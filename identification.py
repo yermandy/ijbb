@@ -150,7 +150,7 @@ if __name__ == "__main__":
     features = np.load("resources/features/features.npy")    
 
     interp_fpir = np.linspace(1e-4, 1, 100000)
-    qualities = new_aggregation
+    qualities = one_face
 
     curves = []
     show_results = True
@@ -174,8 +174,6 @@ if __name__ == "__main__":
 
         features = np.load(f'resources/{quality["features"]}') if 'features' in quality else features
 
-        pairs = np.load(f'resources/{quality["comparisons"]}')['comparisons'] if 'comparisons' in quality else pairs
-
         method = quality['method'] if 'method' in quality else None
 
         alpha = quality['alpha'] if 'alpha' in quality else None
@@ -192,7 +190,7 @@ if __name__ == "__main__":
             method=method
         )
 
-        templates = identify.calc_templates()
+        templates = identify.calc_templates(alpha=alpha)
         nonmated_d, mated_d = identify.calc_distances(templates)
         
         ## Calculate DET curve
@@ -208,7 +206,7 @@ if __name__ == "__main__":
 
         ## Calculate CMC curve
         cmc = identify.calc_cmc(templates)
-        quality['cmc_prob'] = cmc
+        quality['cmc'] = cmc
 
         if show_results:
             print('TPIR@FPIR’s of:')
@@ -223,7 +221,7 @@ if __name__ == "__main__":
 
         curves.append(quality)
 
-    np.savez_compressed("results/results.npz", *curves)
+    np.savez_compressed("results/identification_results.npz", *curves)
 
     plot_cmc(curves)
     plot_det(curves)
