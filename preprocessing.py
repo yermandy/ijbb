@@ -8,7 +8,9 @@ os.makedirs("results", exist_ok=True)
 faces = np.genfromtxt(f"resources/ijbb_faces.csv", dtype=np.str, delimiter=',')
 gallery_S1 = np.genfromtxt(f"protocol/ijbb_1N_gallery_S1.csv", dtype=np.str, delimiter=',', skip_header=1)
 gallery_S2 = np.genfromtxt(f"protocol/ijbb_1N_gallery_S2.csv", dtype=np.str, delimiter=',', skip_header=1)
-mixed = np.genfromtxt(f"protocol/ijbb_1N_probe_mixed.csv", dtype=np.str, delimiter=',', skip_header=1)
+probe_img = np.genfromtxt(f"protocol/ijbb_1N_probe_img.csv", dtype=np.str, delimiter=',', skip_header=1)
+probe_video = np.genfromtxt(f"protocol/ijbb_1N_probe_video.csv", dtype=np.str, delimiter=',', skip_header=1)
+probe_mixed = np.genfromtxt(f"protocol/ijbb_1N_probe_mixed.csv", dtype=np.str, delimiter=',', skip_header=1)
 
 def populate_templates(array, templates):
     for row in array:
@@ -27,7 +29,9 @@ if not isfile("resources/ijbb_templates_subjects.json"):
 
     populate_templates(gallery_S1, templates)
     populate_templates(gallery_S2, templates)
-    populate_templates(mixed, templates)
+    populate_templates(probe_img, templates)
+    populate_templates(probe_video, templates)
+    populate_templates(probe_mixed, templates)
 
     paths = faces[:, 0]
     subjects = faces[:, 6]
