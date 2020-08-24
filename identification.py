@@ -14,6 +14,7 @@ class Identification(Aggregation):
             quality_scores,
             method
         )
+        self.features_dim = features.shape[1]
 
     def calc_distances(self, templates_features):
         gallery_S1 = np.genfromtxt("protocol/ijbb_1N_gallery_S1.csv", delimiter=",", dtype=np.int, skip_header=1)[:, [0,1]]
@@ -24,7 +25,7 @@ class Identification(Aggregation):
         gallery_templates = np.unique(gallery, axis=0)
         probe_templates = np.unique(probe, axis=0)
         
-        gallery_features = np.empty((len(gallery_templates), 256))
+        gallery_features = np.empty((len(gallery_templates), self.features_dim))
         gallery_identities = np.empty(len(gallery_templates))
         
         for i, (g, g_i) in enumerate(gallery_templates):
@@ -108,7 +109,7 @@ class Identification(Aggregation):
         gallery_templates = np.unique(gallery, axis=0)
         probe_templates = np.unique(probe, axis=0)
 
-        gallery_features = np.empty((len(gallery_templates), 256))
+        gallery_features = np.empty((len(gallery_templates), self.features_dim))
         gallery_identities = np.empty(len(gallery_templates))
         for i, (g, g_i) in enumerate(gallery_templates):
             gallery_features[i] = templates_features[g]
@@ -150,7 +151,7 @@ if __name__ == "__main__":
     features = np.load("resources/features/features.npy")    
 
     interp_fpir = np.linspace(1e-4, 1, 100000)
-    qualities = one_face
+    qualities = new_aggregation
 
     curves = []
     show_results = True
@@ -213,11 +214,11 @@ if __name__ == "__main__":
             fnir_at_frir = [1e-2, 1e-1]
             for f_at_f in fnir_at_frir:
                 tpir = 1 - interp_fnir[np.searchsorted(interp_fpir, f_at_f)]
-                print(f'\t{f_at_f:.0E}: {tpir:.3f}')
+                print(f'––> {f_at_f:.0E}: {tpir:.3f}')
             
             print('CMC:')
             for i in [0, 4, 9]:
-                print(f'\tRank-{i+1}: {cmc[i]:.3f}')
+                print(f'––> Rank-{i+1}: {cmc[i]:.3f}')
 
         curves.append(quality)
 

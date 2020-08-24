@@ -19,7 +19,7 @@ class Verification(Aggregation):
         pairs_labels : np.array
             Pairs of faces and labels for verification. (N, 3): N – number of pairs to verify
         features : np.array
-            Extracted features. (M, 256): M – number of faces in IJB-B
+            Extracted features. (M, D): M – number of faces in IJB-B, D – dimensions of features
         quality_scores : np.array, optional
             Extracted qualities. (M,): M – number of faces in IJB-B
         """
@@ -29,6 +29,7 @@ class Verification(Aggregation):
             quality_scores,
             method
         )
+        self.features_dim = features.shape[1]
         self.pairs = pairs_labels
         self.labels = pairs_labels[:, 2]
 
@@ -56,8 +57,8 @@ class Verification(Aggregation):
         distances = np.empty((self.pairs.shape[0]), dtype=np.float32)
         start, end = 0, 0
         for batch in self.batches(self.pairs, batch_size):
-            t1 = np.empty((len(batch), 256), dtype=np.float32)
-            t2 = np.empty((len(batch), 256), dtype=np.float32)
+            t1 = np.empty((len(batch), self.features_dim), dtype=np.float32)
+            t2 = np.empty((len(batch), self.features_dim), dtype=np.float32)
             start = end
             end += len(batch)
             # attenuate = np.empty((len(batch)), dtype=np.bool)
@@ -91,17 +92,15 @@ class Verification(Aggregation):
         min_d = np.min(distances)
         max_d = np.max(distances) + 1e-8
         thresholds = np.linspace(min_d, max_d, min(200, len(distances)))
-        pos = distances[self.labels == 1]
-        neg = distances[self.labels == 0]
-        fars = []
-        tars = []
-        for th in thresholds:
-            tar = len(pos[pos < th])
-            far = len(neg[neg < th])
-            tars.append(tar)
-            fars.append(far)
-        tars = np.array(tars) / len(pos)
-        fars = np.array(fars) / len(neg)
+        pos_d = distances[self.labels == 1]
+        neg_d = distances[self.labels == 0]
+        fars = np.empty(len(thresholds))
+        tars = np.empty(len(thresholds))
+        for i, th in enumerate(thresholds):
+            tars[i] = len(pos_d[pos_d < th])
+            fars[i] = len(neg_d[neg_d < th])
+        tars = tars / len(pos_d)
+        fars = fars / len(neg_d)
         return tars, fars
 
 
@@ -131,7 +130,7 @@ if __name__ == "__main__":
     else:
         template_faces_dict = load(open('resources/ijbb_templates_subjects.json', 'r'))
         pairs = np.load(f'resources/ijbb_comparisons.npz')['comparisons']
-        qualities = one_face
+        qualities = new_aggregation
 
     template_faces_dict = {int(k) : np.array(v) for k, v in template_faces_dict.items()}
         
@@ -143,8 +142,15 @@ if __name__ == "__main__":
     
     for quality in qualities.values():
         print(f'\n{quality["name"]}')
-        # if append_calculated(quality, 'L2_norm', curves, f'results/verification_results.npz'):
-        #     continue
+        if append_calculated(quality, 'averaging SENet-50', curves, f'results/se_vs_arc.npz'):
+            continue
+        if append_calculated(quality, 'averaging ArcFace', curves, f'results/se_vs_arc.npz'):
+            continue
+        if append_calculated(quality, 'media averaging ArcFace', curves, f'results/media_arc.npz'):
+            continue
+        if append_calculated(quality, 'media averaging 2 ArcFace', curves, f'results/media_arc_and_cnn_fq.npz'):
+            continue
+        
         
 
         # region load values from dict
